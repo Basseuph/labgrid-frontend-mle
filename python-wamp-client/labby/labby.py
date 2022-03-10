@@ -10,7 +10,7 @@ import asyncio.log
 from autobahn.asyncio.wamp import ApplicationSession, ApplicationRunner
 import autobahn.wamp.exception as wexception
 
-from .rpc import (cancel_reservation, create_place, create_resource,
+from .rpc import (cancel_reservation, console, console_read, console_write, create_place, create_resource,
                   delete_place, delete_resource, forward, get_alias, get_exporters, invalidates_cache,
                   places, places_names, get_reservations, create_reservation, resource, power_state,
                   acquire, release, info, resource_by_name, resource_overview)
@@ -181,6 +181,9 @@ class RouterInterface(ApplicationSession):
         self.register("place_names", places_names)
         self.register("get_alias", get_alias)
         self.register("get_exporters", get_exporters)
+        self.register("console", console)
+        self.register("console_read", console_read)
+        self.register("console_write", console_write)
 
     def onLeave(self, details):
         self.log.info("Session disconnected.")

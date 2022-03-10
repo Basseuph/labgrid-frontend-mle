@@ -6,15 +6,18 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Type, Union
 
+import serial
 import yaml
 from attr import attrib, attrs
 from autobahn.wamp.exception import ApplicationError
+from serial import Serial
 
+from labby.resource import LabbyResource, NetworkSerialPort
 from .labby_error import (LabbyError, failed, invalid_parameter,
                           not_found)
-from .labby_types import (ExporterName, GroupName, LabbyPlace, PlaceName, PowerState, Resource,
-                          ResourceName, Session)
-from .labby_util import flatten, prepare_place
+from .labby_types import (ExporterName, GroupName, LabbyPlace, PlaceName,
+                          PowerState, Resource, ResourceName, Session)
+from .labby_util import asread, aswrite, flatten, prepare_place
 
 
 @attrs()
@@ -480,7 +483,6 @@ async def cancel_reservation(context, place: PlaceName):
     token = next(iter(context.reservations[place]))
     assert token
     return await context.call("org.labgrid.coordinator.cancel_reservation", token)
-    
 
 async def reset(context: Session, place: PlaceName) -> bool:
     """
@@ -490,8 +492,80 @@ async def reset(context: Session, place: PlaceName) -> bool:
     return False
 
 
-async def console(context: Session, *args):
-    pass
+@labby_serialized
+async def console(context: Session, place: PlaceName):
+    # TODO allow selection of resource to connect console to
+    if place is None:
+        return invalid_parameter("Missing required parameter: place.")
+    if place not in context.acquired_places:
+        ret = await acquire(context, place)
+        if isinstance(ret, LabbyError):
+            return ret
+        if not ret:
+            return failed("Failed to acquire Place (It may already have been acquired).")
+    if place in context.open_consoles:
+        return failed(f"There is already a console open for {place}.")
+    _resources = await fetch_resources(context, place, resource_key=None)
+    if isinstance(_resources, LabbyError):
+        return _resources
+    if len(_resources) == 0:
+        return failed(f"No resources on {place}.")
+    _resources = flatten(_resources, depth=2)  # remove exporter and place
+    _resource: Optional[LabbyResource] = next(
+        (
+            NetworkSerialPort(
+                cls=data['cls'],
+                port=data['params']['port'],
+                host=data['params']['host'],
+                speed=data['params']['speed'],
+                protocol=data['params'].get('protocol'),
+            )
+            for _, data in _resources.items()
+            if 'cls' in data and data['cls'] == 'NetworkSerialPort'
+        ),
+        None,
+    )
+
+    if _resource is None:
+        return failed(f"No network serial port on {place}.")
+    assert isinstance(_resource, NetworkSerialPort)
+    _console = Serial(
+        port=f"//{_resource.host}:{_resource.port}",
+        baudrate=_resource.speed,
+        parity=serial.PARITY_ODD,
+        stopbits=serial.STOPBITS_TWO,
+        bytesize=serial.SEVENBITS,
+    )
+    context.open_consoles[place] = _console
+    return True
+
+
+@labby_serialized
+async def console_write(context: Session,
+                        place: PlaceName,
+                        data: Union[str, bytes]) -> Union[bool, LabbyError]:
+    if place is None:
+        return invalid_parameter("Missing required parameter: place.")
+    if place not in context.open_consoles:
+        return failed(f"{place} does not have an open console.")
+    _console = context.open_consoles[place]
+    if not _console.is_open:
+        return failed("Console is closed.")
+    return await aswrite(_console,
+                         data if isinstance(data, bytes) else bytes(data, 'utf-8')) == len(data)
+
+
+@labby_serialized
+async def console_read(context: Session,
+                       place: PlaceName) -> Union[Optional[bytes], LabbyError]:
+    if place is None:
+        return invalid_parameter("Missing required parameter: place.")
+    if place not in context.open_consoles:
+        return failed(f"{place} does not have an open console.")
+    _console = context.open_consoles[place]
+    if not _console.is_open:
+        return failed("Console is closed.")
+    return await asread(_console)
 
 
 
@@ -534,6 +608,8 @@ async def delete_place(context: Session, place: PlaceName) -> Union[bool, LabbyE
     res = await context.call("org.labgrid.coordinator.del_place", place)
     return res
 
+# TODO (Kevin) Find a way to do this without being a exporter/ delegate to exporter
+
 
 @labby_serialized
 async def create_resource(context: Session, group_name: GroupName, resource_name: ResourceName) -> Union[bool, LabbyError]:
@@ -544,6 +620,8 @@ async def create_resource(context: Session, group_name: GroupName, resource_name
         return invalid_parameter("Missing required parameter: resource_name.")
     ret = await context.call("org.labgrid.coordinator.set_resource", group_name, resource_name, {})
     return ret
+
+# TODO (Kevin) Find a way to do this without being a exporter/ delegate to exporter
 
 
 @labby_serialized

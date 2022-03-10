@@ -6,7 +6,6 @@ from serial import Serial
 from typing import Generator, Optional, Dict
 
 from labby.resource import NetworkSerialPort
-from labby.wsurl import url_from_parts
 
 
 def prepare_place(place_data: Dict,

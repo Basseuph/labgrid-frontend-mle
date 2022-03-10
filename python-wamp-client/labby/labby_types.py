@@ -31,6 +31,7 @@ class Session(ApplicationSession):
         self.acquired_places: List = []
         self.power_states: Optional[List] = None
         self.reservations: Dict = {}
+        self.open_consoles: Dict[PlaceName, "Serial"] = {}
         super().__init__(*args, **kwargs)
 
 
