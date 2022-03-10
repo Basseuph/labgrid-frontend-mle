@@ -1,4 +1,12 @@
-from typing import Optional, Dict
+import asyncio
+from asyncio import log
+import sys
+import serial
+from serial import Serial
+from typing import Generator, Optional, Dict
+
+from labby.resource import NetworkSerialPort
+from labby.wsurl import url_from_parts
 
 
 def prepare_place(place_data: Dict,
@@ -26,3 +34,14 @@ def flatten(data: Dict, depth=1):
         else:
             res[key] = value
     return res
+
+
+async def asread(console: Serial) -> bytes:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, console.read)
+
+
+async def aswrite(console: Serial, data: bytes) -> int:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda data=data: console.write(data))
+
