@@ -6,12 +6,15 @@ import { AllocationState } from '../_enums/allocation-state';
 import * as autobahn from 'autobahn-browser';
 
 import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject } from 'rxjs';
 
 @Injectable({
     providedIn: 'root',
 })
 export class PlaceService {
     private session: any;
+
+    public places = new BehaviorSubject<Place[]>([]);
 
     constructor(private _http: HttpClient) {
         const connection = new autobahn.Connection({
@@ -36,13 +39,16 @@ export class PlaceService {
         // Otherwise we wait 1 second.
         if (this.session) {
             const places = await this.session.call('localhost.places');
+            this.places.next(places);
             return places;
         } else {
             await new Promise((resolve, reject) => {
                 // The 1000 milliseconds is a critical variable. It may be adapted in the future.
                 setTimeout(resolve, 1000);
             });
+
             const places = await this.session.call('localhost.places');
+            this.places.next(places);
             return places;
         }
     }
@@ -72,29 +78,25 @@ export class PlaceService {
         }
     }
 
-    public async acquirePlace(placeName: string): Promise<boolean> {
-        let body = (await this.getPlace(placeName)) as Place;
-
-        if ((<any>AllocationState)[body.reservation] === AllocationState.Acquired) {
-            console.log('This place is already acquired.');
-            return false;
+    public async acquirePlace(placeName: string): Promise<{ successful: boolean; errorMessage: string }> {
+        const acquire = await this.session.call('localhost.acquire', [placeName]);
+        if (acquire === true) {
+            return { successful: true, errorMessage: '' };
+        } else if (acquire === false) {
+            return { successful: false, errorMessage: 'An unknown error occured!' };
         } else {
-            console.log('Place not yet acquired. Try to acquire.');
-            // TODO: Connect to server
-            return true;
+            return { successful: false, errorMessage: acquire.error.message };
         }
     }
 
-    public async releasePlace(placeName: string): Promise<boolean> {
-        let body = (await this.getPlace(placeName)) as Place;
+    public async releasePlace(placeName: string): Promise<{ successful: boolean; errorMessage: string }> {
+        const release = await this.session.call('localhost.release', [placeName]);
+        console.log('release: ', release);
 
-        if ((<any>AllocationState)[body.reservation] === AllocationState.Acquired) {
-            console.log('Something went wrong while releasing the place.');
-            return false;
+        if (release === true) {
+            return { successful: true, errorMessage: 'An unknown error occured!' };
         } else {
-            console.log('Place released successfully.');
-            // TODO: Connect to server
-            return true;
+            return { successful: false, errorMessage: release.error.message };
         }
     }
 
@@ -102,12 +104,24 @@ export class PlaceService {
         let body = (await this.getPlace(placeName)) as Place;
 
         if ((<any>AllocationState)[body.reservation] === AllocationState.Acquired) {
-            console.log('Something went wrong while reserve the place.');
+            console.log('Something went wrong while reserving the place.');
             return false;
         } else {
             console.log('Place is reserved.');
             // TODO: Connect to server
             return true;
+        }
+    }
+
+    public async createNewPlace(placeName: string): Promise<{ successful: boolean; errorMessage: string }> {
+        let response = await this.session.call('localhost.create_place', [placeName]);
+
+        if (response === true) {
+            return { successful: true, errorMessage: '' };
+        } else if (response === false) {
+            return { successful: false, errorMessage: 'An unknown error occured!' };
+        } else {
+            return { successful: false, errorMessage: response.error.message };
         }
     }
 }
