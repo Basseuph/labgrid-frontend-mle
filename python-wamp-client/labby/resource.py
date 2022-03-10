@@ -2,8 +2,8 @@
 Handle resources to be sent via the router
 """
 from enum import Enum
-from typing import Dict
-
+from typing import Dict, Optional
+from attr import attrs, attrib
 
 class ResourceType(Enum):
     RAWSERIALPORT = "RawSerialPort"
@@ -21,44 +21,32 @@ def get_exporter_url(url: str):
     #TODO (Kevin)
     raise NotImplementedError
 
-
-class Resource:
-    """
-    Binds RPC for a resource
-    """
-
+@attrs
+class LabbyResource:
+    cls: Optional[str] = attrib()
+    avail: bool = attrib(default=True)
+    params: Dict = attrib(default=None)
+    acquired : bool = attrib(default=False)
+    
     def __init__(self, **kwargs):
-        self.raw_params = kwargs["params"]
+        self.props = kwargs["params"]
 
     @property
     def name(self):
-        return self.raw_params["name"]
-
-    def publish(self, place: str, router):
-        """
-        publish a resource and its rpc to a router and place
-        """
-        raise NotImplementedError
-
-    def is_available(self) -> bool:
-        """
-        Is the backed resource available to be used
-        """
-        raise NotImplementedError
+        return self.props["name"]
 
 
-def resource_from_ws(payload: Dict) -> Resource:
-    assert "params" in payload
-    return Resource()
+@attrs
+class NetworkSerialPort(LabbyResource):
+    port : int = attrib(default=12345)
+    speed : int = attrib(default=115200)
+    protocol : str = attrib(default='rfc2217')
+    host : Optional[str] = attrib(default=None)
+    
 
 
-if __name__ == "__main__":
 
-    payload = {
-        "name": "name",
-        "matches": "",
-        "acquired": False,
-        "cls": ""
-    }
-
-    resource_from_ws(payload)
+def resource_from_dict(data : Dict) -> Optional[LabbyResource]:
+    if 'cls' in data and data['cls'] == 'NetworkSerialPort':
+        return NetworkSerialPort(**data, **data['params'])
+    return None
