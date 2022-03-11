@@ -12,7 +12,7 @@ class ErrorKind(Enum):
     INVALID_PARAMETER = "InvalidParameter"
     NOT_FOUND = "NotFound"
     FAILED = "Failed"
-
+    MISSING_PARAMETER = "MISSING_PARAMETER"
 
 class LabbyError:
     """
@@ -65,3 +65,8 @@ def failed(message: str) -> LabbyError:
     """
     assert message is not None
     return LabbyError(ErrorKind.FAILED, message)
+
+
+def missing_required_parameter(param: str) -> LabbyError:
+    assert param
+    return LabbyError(ErrorKind.MISSING_PARAMETER, f"Missing required parameter: {param}.")

@@ -2,6 +2,7 @@
 Generic RPC functions for labby
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Type, Union
@@ -45,51 +46,6 @@ def invalidate_cache(attribute):
         pass
 
     return decorator
-
-def cached(attribute: str):
-    """
-    Decorator defintion to cache data in labby context and fetch data from server
-    """
-    assert attribute is not None
-
-    def decorator(func: Callable):
-
-        async def wrapped(context: Session, *args, **kwargs):
-            assert context is not None
-
-            if not hasattr(context, attribute):
-                context.__dict__.update({attribute: None})
-                data = None
-            else:
-                data: Optional[Dict] = context.__getattribute__(
-                    attribute)
-            if context.__getattribute__(attribute) is None:
-                data: Optional[Dict] = await func(context, *args, **kwargs)
-                context.__setattr__(attribute, data)
-            return data
-
-        return wrapped
-
-    return decorator
-
-
-def labby_serialized(func):
-    """
-    Custom serializer decorator for labby rpc functions
-    to make sure returned values are cbor/json serializable
-    """
-    async def wrapped(*args, **kwargs):
-        ret = await func(*args, **kwargs)
-        if isinstance(ret, LabbyError):
-            return ret.to_json()
-        if isinstance(ret, LabbyPlace):
-            return ret.to_json()
-        if isinstance(ret, (dict, list)) or type(ret) in _serializable_primitive:
-            return ret
-        raise NotImplementedError(
-            f"{type(ret)} can currently not be serialized!")
-
-    return wrapped
 
 
 FUNCTION_INFO = {}
@@ -152,6 +108,7 @@ def labby_serialized(func):
         if ret is None:
             return None
         if isinstance(ret, LabbyError):
+            logging.error("Received error: %s: %s", ret.kind, ret.message)
             return ret.to_json()
         if isinstance(ret, LabbyPlace):
             return ret.to_json()
@@ -161,7 +118,6 @@ def labby_serialized(func):
             f"{type(ret)} can currently not be serialized!")
 
     return wrapped
-
 
 async def fetch(context: Session, attribute: str, endpoint: str, *args, **kwargs) -> Any:
     """
@@ -484,11 +440,24 @@ async def cancel_reservation(context, place: PlaceName):
     assert token
     return await context.call("org.labgrid.coordinator.cancel_reservation", token)
 
-async def reset(context: Session, place: PlaceName) -> bool:
+
+@labby_serialized
+async def reset(context: Session, place: PlaceName) -> Union[bool, LabbyError]:
     """
     Send a reset request to a place matching a given place name
-    Note
     """
+    if place is None:
+        return invalid_parameter("Missing required parameter: place.")
+    # acquire the place if it is not already acquired
+    # if we havent acquired the place before
+    # then release it after we're done
+    not_acquired = place in context.acquired_places
+    if not_acquired:
+        ret = await acquire(context, place)
+        if isinstance(ret, LabbyError):
+            return ret
+        if not ret:
+            return failed(f"Could not acquire place {place}.")
     return False
 
 
@@ -568,7 +537,6 @@ async def console_read(context: Session,
     return await asread(_console)
 
 
-
 async def video(context: Session, *args):
     pass
 
@@ -608,8 +576,6 @@ async def delete_place(context: Session, place: PlaceName) -> Union[bool, LabbyE
     res = await context.call("org.labgrid.coordinator.del_place", place)
     return res
 
-# TODO (Kevin) Find a way to do this without being a exporter/ delegate to exporter
-
 
 @labby_serialized
 async def create_resource(context: Session, group_name: GroupName, resource_name: ResourceName) -> Union[bool, LabbyError]:
@@ -620,8 +586,6 @@ async def create_resource(context: Session, group_name: GroupName, resource_name
         return invalid_parameter("Missing required parameter: resource_name.")
     ret = await context.call("org.labgrid.coordinator.set_resource", group_name, resource_name, {})
     return ret
-
-# TODO (Kevin) Find a way to do this without being a exporter/ delegate to exporter
 
 
 @labby_serialized

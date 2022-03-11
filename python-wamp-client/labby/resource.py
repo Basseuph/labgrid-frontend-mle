@@ -42,7 +42,7 @@ class NetworkSerialPort(LabbyResource):
     speed : int = attrib(default=115200)
     protocol : str = attrib(default='rfc2217')
     host : Optional[str] = attrib(default=None)
-    
+
 
 
 
